@@ -1,0 +1,33 @@
+name: Stock Bot Scanner
+
+on:
+  schedule:
+    # Giờ VN = Giờ UTC + 7
+    # Sáng: 9:10, 10:10, 11:10 (tương ứng UTC 2:10, 3:10, 4:10)
+    # Chiều: 13:10, 14:10 (tương ứng UTC 6:10, 7:10)
+    - cron: '10 2,3,4,6,7 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  run-scanner:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install pandas numpy requests vnstock
+
+      - name: Run scanner script
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python bot_scanner.py
+ 
