@@ -144,4 +144,27 @@ def main():
 
 if __name__ == "__main__":
     main()
- 
+ import os
+import requests
+
+def send_telegram_message(message):
+    token = os.environ.get("TELEGRAM_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    if not token or not chat_id:
+        print("Thiếu Token hoặc Chat ID Telegram!")
+        return
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": message,
+        "parse_mode": "Markdown"
+    }
+    response = requests.post(url, json=payload)
+    if response.status_code == 200:
+        print("Đã gửi tin nhắn Telegram thành công!")
+    else:
+        print(f"Lỗi gửi tin nhắn: {response.text}")
+
+# Thêm dòng này vào cuối chương trình của bạn sau khi quét xong:
+send_telegram_message("🤖 Xin chào! Bot Ichimoku đã quét xong và hệ thống hoạt động bình thường.")
+
