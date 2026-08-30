@@ -10,7 +10,6 @@ warnings.filterwarnings('ignore')
 from vnstock import Quote
 
 # --- CẤU HÌNH THÔNG SỐ & API ---
-# Lấy token Telegram và Chat ID từ GitHub Secrets (hoặc điền trực tiếp khi test local)
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', 'YOUR_TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', 'YOUR_TELEGRAM_CHAT_ID')
 
@@ -27,18 +26,22 @@ HIGH_WINRATE_WATCHLIST = [
 
 def send_telegram_message(message):
     """Hàm gửi tin nhắn cảnh báo qua Telegram"""
-    if TELEGRAM_BOT_TOKEN == 'YOUR_TELEGRAM_BOT_TOKEN':
-        print("⚠️ Chưa cấu hình Telegram Token, bỏ qua bước gửi tin nhắn.")
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", TELEGRAM_BOT_TOKEN)
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID", TELEGRAM_CHAT_ID)
+    if not token or not chat_id or token == 'YOUR_TELEGRAM_BOT_TOKEN':
+        print("⚠️ Chưa cấu hình Telegram Token hoặc Chat ID, bỏ qua bước gửi tin nhắn.")
         return
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
     payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
+        "chat_id": chat_id,
         "text": message,
         "parse_mode": "HTML"
     }
     try:
         response = requests.post(url, json=payload)
-        if response.status_code != 200:
+        if response.status_code == 200:
+            print("Đã gửi tin nhắn Telegram thành công!")
+        else:
             print(f"❌ Lỗi gửi Telegram: {response.text}")
     except Exception as e:
         print(f"❌ Lỗi kết nối Telegram: {e}")
@@ -118,6 +121,7 @@ def main():
     print(f"🚀 BẮT ĐẦU QUÉT TÍN HIỆU THỜI GIAN THỰC CHO {len(HIGH_WINRATE_WATCHLIST)} MÃ...")
     df_vni = get_market_and_vni_data()
     if df_vni is None:
+        send_telegram_message("⚠️ Bot Ichimoku: Không thể tải dữ liệu thị trường VN-Index lúc khởi chạy.")
         return
 
     signals = []
@@ -141,30 +145,9 @@ def main():
         send_telegram_message(msg)
     else:
         print("ℹ️ Hiện tại không có mã nào kích hoạt điểm mua mới.")
+        # Nếu muốn bot báo cáo mỗi lần quét xong dù không có mã (tùy chọn), có thể bật dòng dưới:
+        # send_telegram_message("🤖 Bot Ichimoku đã quét xong phiên này, hiện tại chưa phát hiện mã nào kích hoạt điểm mua.")
 
 if __name__ == "__main__":
     main()
- import os
-import requests
-
-def send_telegram_message(message):
-    token = os.environ.get("TELEGRAM_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
-    if not token or not chat_id:
-        print("Thiếu Token hoặc Chat ID Telegram!")
-        return
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = {
-        "chat_id": chat_id,
-        "text": message,
-        "parse_mode": "Markdown"
-    }
-    response = requests.post(url, json=payload)
-    if response.status_code == 200:
-        print("Đã gửi tin nhắn Telegram thành công!")
-    else:
-        print(f"Lỗi gửi tin nhắn: {response.text}")
-
-# Thêm dòng này vào cuối chương trình của bạn sau khi quét xong:
-send_telegram_message("🤖 Xin chào! Bot Ichimoku đã quét xong và hệ thống hoạt động bình thường.")
-
+ 
