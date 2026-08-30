@@ -118,6 +118,9 @@ def scan_realtime_signals(symbol, df_vni):
     return None
 
 def main():
+    send_telegram_message("🤖 Test kết nối: Bot Ichimoku đã hoạt động và sẵn sàng trực chiến!")
+    print(f"🚀 BẮT ĐẦU QUÉT TÍN HIỆU THỜI GIAN THỰC CHO {len(HIGH_WINRATE_WATCHLIST)} MÃ...")
+    df_vni = get_market_and_vni_data()
     print(f"🚀 BẮT ĐẦU QUÉT TÍN HIỆU THỜI GIAN THỰC CHO {len(HIGH_WINRATE_WATCHLIST)} MÃ...")
     df_vni = get_market_and_vni_data()
     if df_vni is None:
