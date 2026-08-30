@@ -126,7 +126,7 @@ def main():
         res = scan_realtime_signals(symbol, df_vni)
         if res:
             signals.append(res)
-        time.sleep(1.5)
+        time.sleep(4.0)
 
     print("\n✅ Quét hoàn tất!")
 
