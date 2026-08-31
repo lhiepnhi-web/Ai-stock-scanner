@@ -1,5 +1,6 @@
-streamlit
+vnstock
 pandas
 numpy
-vnstock
+tabulate
+requests
  
