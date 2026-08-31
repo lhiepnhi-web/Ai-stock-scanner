@@ -1,3 +1,4 @@
+import os
 import time
 import requests
 import pandas as pd
@@ -11,8 +12,9 @@ warnings.filterwarnings('ignore')
 # ==============================================================================
 # 1. CẤU HÌNH BOT TELEGRAM & DANH MỤC WATCHLIST
 # ==============================================================================
-TELEGRAM_TOKEN = "8517494324:AAFxYulrkSy1lhftzejbCFPmEv-cmpt5utc "  # Thay bằng Token từ @BotFather
-TELEGRAM_CHAT_ID = "6760219447 "  # Thay bằng Chat ID của bạn
+# Ưu tiên lấy từ GitHub Secrets, nếu không có sẽ lấy chuỗi mặc định
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "YOUR_TELEGRAM_CHAT_ID")
 
 WATCHLIST = [
     'VIX', 'PNJ', 'DGW', 'PVT', 'DQC', 'LCG', 'DIG', 'TCB', 'YEG', 'BID', 
@@ -23,14 +25,15 @@ WATCHLIST = [
 ]
 WATCHLIST = list(dict.fromkeys(WATCHLIST))
 
-# Lưu vết các tín hiệu đã gửi để tránh bắn lặp tin nhắn trong cùng 1 nến H1
-SENT_SIGNALS = set()
-
 # ==============================================================================
 # 2. HÀM TƯƠNG TÁC TELEGRAM
 # ==============================================================================
 def send_telegram(message):
     """Hàm gửi tin nhắn qua Telegram Bot API"""
+    if not TELEGRAM_TOKEN or TELEGRAM_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN":
+        print("⚠️ Chưa cấu hình TELEGRAM_BOT_TOKEN!")
+        return False
+        
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
@@ -43,22 +46,6 @@ def send_telegram(message):
     except Exception as e:
         print(f"❌ Lỗi gửi Telegram: {e}")
         return False
-
-def test_telegram_connection():
-    """Kiểm tra kết nối Telegram khi khởi chạy script"""
-    print("📡 Đang kết nối tới Telegram Bot...")
-    tz_vn = pytz.timezone('Asia/Ho_Chi_Minh')
-    now_str = datetime.now(tz_vn).strftime("%H:%M:%S %d/%m/%Y")
-    
-    test_msg = (
-        "🤖 <b>[KẾT NỐI THÀNH CÔNG]</b>\n"
-        f"⏱ Thời gian: {now_str}\n"
-        "✅ Bot tín hiệu Ichimoku T+2.5 đã sẵn sàng hoạt động!"
-    )
-    if send_telegram(test_msg):
-        print("✅ Gửi tin nhắn test Telegram thành công!")
-    else:
-        print("❌ Kết nối Telegram thất bại! Vui lòng kiểm tra lại TOKEN và CHAT_ID.")
 
 # ==============================================================================
 # 3. HÀM KIỂM TRA GIỜ GIAO DỊCH VÀ TÍNH TOÁN KỸ THUẬT
@@ -95,7 +82,9 @@ def calculate_indicators(df):
 # ==============================================================================
 def scan_signals():
     """Quét dữ liệu real-time và phát hiện tín hiệu mua"""
-    print(f"\n🔍 [{datetime.now().strftime('%H:%M:%S')}] Đang quét tín hiệu thị trường...")
+    tz_vn = pytz.timezone('Asia/Ho_Chi_Minh')
+    now_str = datetime.now(tz_vn).strftime("%H:%M:%S %d/%m/%Y")
+    print(f"\n🔍 [{now_str}] Bắt đầu quét tín hiệu thị trường...")
     
     # 1. Lấy xu hướng VN-Index (VNI > MA20 H1)
     vni_ok = False
@@ -116,6 +105,7 @@ def scan_signals():
         print("⚠️ Xu hướng VN-Index chưa đạt điều kiện (VNI < MA20). Bỏ qua lượt quét.")
         return
 
+    signals_found = 0
     # 2. Lặp qua danh mục cổ phiếu
     for symbol in WATCHLIST:
         try:
@@ -133,48 +123,37 @@ def scan_signals():
             cross_up = (prev['tenkan'] <= prev['kijun']) and (curr['tenkan'] > curr['kijun'])
             
             if cross_up and pd.notnull(curr['atr']) and curr['atr'] > 0:
-                signal_id = f"{symbol}_{curr['time']}"
+                entry_price = curr['close']
+                sl_price = entry_price - (2.0 * curr['atr'])
+                tp_price = entry_price + (4.5 * curr['atr'])
                 
-                if signal_id not in SENT_SIGNALS:
-                    entry_price = curr['close']
-                    sl_price = entry_price - (2.0 * curr['atr'])
-                    tp_price = entry_price + (4.5 * curr['atr'])
-                    
-                    # Soạn nội dung tin nhắn Telegram
-                    msg = (
-                        f"🚨 <b>[TÍN HIỆU MUA - ICHIMOKU H1]</b> 🚨\n\n"
-                        f"📌 <b>Mã CP:</b> #{symbol}\n"
-                        f"💵 <b>Giá Mua (Entry):</b> {entry_price:,.0f} VND\n"
-                        f"🎯 <b>Chốt lời (TP 4.5x ATR):</b> {tp_price:,.0f} VND (+{((tp_price/entry_price)-1)*100:.1f}%)\n"
-                        f"🛡 <b>Cắt lỗ (SL 2.0x ATR):</b> {sl_price:,.0f} VND (-{((1-(sl_price/entry_price)))*100:.1f}%)\n"
-                        f"⏱ <b>Thời gian giữ:</b> T+2.5 (Tối thiểu 12 nến H1)\n"
-                        f"🕒 <b>Nến phát hiện:</b> {curr['time']}"
-                    )
-                    
-                    print(f"✅ TÍN HIỆU MỚI: {symbol} giá {entry_price:,.0f}")
-                    if send_telegram(msg):
-                        SENT_SIGNALS.add(signal_id)
+                msg = (
+                    f"🚨 <b>[TÍN HIỆU MUA - ICHIMOKU H1]</b> 🚨\n\n"
+                    f"📌 <b>Mã CP:</b> #{symbol}\n"
+                    f"💵 <b>Giá Mua (Entry):</b> {entry_price:,.0f} VND\n"
+                    f"🎯 <b>Chốt lời (TP 4.5x ATR):</b> {tp_price:,.0f} VND (+{((tp_price/entry_price)-1)*100:.1f}%)\n"
+                    f"🛡 <b>Cắt lỗ (SL 2.0x ATR):</b> {sl_price:,.0f} VND (-{((1-(sl_price/entry_price)))*100:.1f}%)\n"
+                    f"⏱ <b>Thời gian giữ:</b> T+2.5 (Tối thiểu 12 nến H1)\n"
+                    f"🕒 <b>Nến phát hiện:</b> {curr['time']}"
+                )
+                
+                print(f"✅ TÍN HIỆU MỚI: {symbol} giá {entry_price:,.0f}")
+                send_telegram(msg)
+                signals_found += 1
+                
         except Exception as e:
             continue
+            
+    if signals_found == 0:
+        print("ℹ️ Không tìm thấy tín hiệu mua mới trong lượt quét này.")
 
 # ==============================================================================
-# 5. CHƯƠNG TRÌNH CHÍNH (MAIN LOOP)
+# 5. CHƯƠNG TRÌNH CHÍNH (CHẠY 1 LẦN DÀNH CHO GITHUB ACTIONS)
 # ==============================================================================
 if __name__ == "__main__":
-    # 1. Gửi tin nhắn test kết nối
-    test_telegram_connection()
-    
-    print("\n🚀 Bot quét tín hiệu thực chiến bắt đầu vận hành...")
-    print("⏰ Giờ hoạt động: 09:00-11:30 & 13:00-14:30 (Thứ 2 - Thứ 6)\n")
-    
-    # 2. Vòng lặp quét dữ liệu mỗi 5 phút/lần
-    while True:
-        if is_market_hours():
-            scan_signals()
-        else:
-            tz_vn = pytz.timezone('Asia/Ho_Chi_Minh')
-            now_str = datetime.now(tz_vn).strftime("%H:%M:%S")
-            print(f"\r💤 [{now_str}] Ngoài giờ giao dịch. Bot đang nghỉ...", end="")
-            
-        time.sleep(300) # Quét lại sau 5 phút (300 giây)
+    if is_market_hours():
+        print("⏰ Đang trong khung giờ giao dịch -> Bắt đầu quét...")
+        scan_signals()
+    else:
+        print("💤 Ngoài khung giờ giao dịch. Bỏ qua lượt quét này.")
  
