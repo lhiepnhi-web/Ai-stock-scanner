@@ -177,7 +177,7 @@ if __name__ == "__main__":
     else:
         print(f"Trạng thái quét: {result['status']}")
 import os
-impo2rt requests
+import requests
 
 def send_telegram_message(message):
     token = os.environ.get("TELEGRAM_TOKEN")
