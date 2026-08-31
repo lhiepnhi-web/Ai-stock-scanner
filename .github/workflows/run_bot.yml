@@ -22,7 +22,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pandas numpy requests vnstock
+          pip install pandas numpy requests vnstock tabulate
 
       - name: Run scanner script
         env:
