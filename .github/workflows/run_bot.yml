@@ -1,34 +1,50 @@
-name: Stock Bot Scanner
+name: Run All 3 Trading Bots Realtime
 
 on:
   schedule:
-    # Giờ VN = Giờ UTC + 7 (Chạy thứ 2 đến thứ 6)
-    # Sáng (09:00 - 11:30): Quét lúc 09:15, 09:45, 10:15, 10:45, 11:15 (Tương ứng UTC 2:15, 2:45, 3:15, 3:45, 4:15)
-    # Chiều (13:00 - 14:30): Quét lúc 13:15, 13:45, 14:15 (Tương ứng UTC 6:15, 6:45, 7:15)
-    - cron: '15,45 2,3,4,6,7 * * 1-5'
+    - cron: '15 2 * * 1-5'
+    - cron: '45 2 * * 1-5'
+    - cron: '15 3 * * 1-5'
+    - cron: '45 3 * * 1-5'
+    - cron: '15 4 * * 1-5'
+    - cron: '15 6 * * 1-5'
+    - cron: '45 6 * * 1-5'
+    - cron: '15 7 * * 1-5'
   workflow_dispatch:
 
 jobs:
-  run-scanner:
+  run-all-bots:
     runs-on: ubuntu-latest
+    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+    - name: Checkout Code
+      uses: actions/checkout@v3
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
 
-      - name: Install dependencies
-        run: |
-          pip install pandas numpy requests vnstock tabulate
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install vnstock pandas numpy requests pytz
 
-      - name: Run scanner scripts
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          python bot_scanner.py
-          python bot_custom.py
+    - name: Run Bot 1 - MSR + VTP
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      run: python bot1_msr_vtp.py
+
+    - name: Run Bot 2 - 16 Ma Pullback
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      run: python bot2_pullback_16.py
+
+    - name: Run Bot 3 - 14 Ma Pullback
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      run: python bot3_pullback_14.py
  
