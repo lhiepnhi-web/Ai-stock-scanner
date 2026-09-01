@@ -9,12 +9,39 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # ==============================================================================
-# 1. CẤU HÌNH BOT TELEGRAM & TOP 10 MÃ CHỌN LỌC TỐI ƯU
+# 1. CẤU HÌNH BOT TELEGRAM & DANH MỤC 25 MÃ TỐI ƯU (ĐÃ BỎ VTP TỰ ĐỘNG)
 # ==============================================================================
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "YOUR_TELEGRAM_CHAT_ID")
 
-WATCHLIST = ['BMI', 'PVT', 'VIX', 'FCN', 'TCB', 'GEX', 'VHM', 'TDM', 'DQC', 'BID']
+OPTIMAL_25 = {
+    # Ngân hàng, Bán lẻ, Công nghệ & Mã tốt trước đó (Không chứa VTP & MSR)
+    'STB': {'sl': 3.5, 'tp': 7.0, 'holding': 20},
+    'HDB': {'sl': 3.5, 'tp': 7.0, 'holding': 20},
+    'TCB': {'sl': 3.5, 'tp': 7.0, 'holding': 20},
+    'MBB': {'sl': 3.5, 'tp': 7.0, 'holding': 20},
+    'BID': {'sl': 3.0, 'tp': 6.0, 'holding': 20},
+    'VCB': {'sl': 2.5, 'tp': 5.0, 'holding': 12},
+    'BAB': {'sl': 3.5, 'tp': 7.0, 'holding': 20},
+    'PNJ': {'sl': 2.5, 'tp': 5.0, 'holding': 12},
+    'MWG': {'sl': 2.5, 'tp': 5.0, 'holding': 12},
+    'PET': {'sl': 2.5, 'tp': 5.0, 'holding': 12},
+    'FRT': {'sl': 2.5, 'tp': 5.0, 'holding': 12},
+    'DGW': {'sl': 3.0, 'tp': 6.0, 'holding': 20},
+    'HAX': {'sl': 3.0, 'tp': 6.0, 'holding': 20},
+    'TCM': {'sl': 2.5, 'tp': 5.0, 'holding': 12},
+    'FPT': {'sl': 3.5, 'tp': 7.0, 'holding': 20},
+    'VGI': {'sl': 2.5, 'tp': 5.0, 'holding': 12},
+    'ELC': {'sl': 3.0, 'tp': 6.0, 'holding': 20},
+    'BMI': {'sl': 3.0, 'tp': 6.0, 'holding': 20},
+    'PVT': {'sl': 2.5, 'tp': 5.0, 'holding': 12},
+    'VIX': {'sl': 3.0, 'tp': 6.0, 'holding': 20},
+    'FCN': {'sl': 2.0, 'tp': 4.5, 'holding': 12},
+    'GEX': {'sl': 3.0, 'tp': 5.5, 'holding': 16},
+    'VHM': {'sl': 3.0, 'tp': 6.0, 'holding': 20},
+    'TDM': {'sl': 3.0, 'tp': 6.0, 'holding': 20},
+    'DQC': {'sl': 3.0, 'tp': 6.0, 'holding': 20}
+}
 
 # ==============================================================================
 # 2. HÀM GỬI TELEGRAM & KIỂM TRA GIỜ GIAO DỊCH
@@ -61,12 +88,12 @@ def calculate_indicators(df):
     return df
 
 # ==============================================================================
-# 4. HÀM QUÉT TÍN HIỆU REAL-TIME
+# 4. QUÉT TÍN HIỆU REAL-TIME THEO CẤU HÌNH TỪNG MÃ
 # ==============================================================================
 def scan_signals():
     tz_vn = pytz.timezone('Asia/Ho_Chi_Minh')
     now_str = datetime.now(tz_vn).strftime("%H:%M:%S %d/%m/%Y")
-    print(f"\n🔍 [{now_str}] Bắt đầu quét Top 10 mã chọn lọc...")
+    print(f"\n🔍 [{now_str}] Bắt đầu quét danh mục 25 mã tối ưu...")
     
     # 1. Kiểm tra xu hướng VN-Index
     vni_ok = False
@@ -87,8 +114,8 @@ def scan_signals():
         print("⚠️ VN-Index chưa đạt điều kiện (VNI < MA20). Bỏ qua lượt quét.")
         return
 
-    # 2. Quét Top 10 mã
-    for symbol in WATCHLIST:
+    # 2. Quét danh mục 25 mã
+    for symbol, cfg in OPTIMAL_25.items():
         try:
             quote = Quote(symbol=symbol, source="KBS")
             df = quote.history(start="2026-01-01", interval="1H")
@@ -104,17 +131,18 @@ def scan_signals():
             
             if cross_up and pd.notnull(curr['atr']) and curr['atr'] > 0:
                 entry = curr['close']
-                sl = entry - (2.0 * curr['atr'])
-                tp = entry + (4.5 * curr['atr'])
+                sl = entry - (cfg['sl'] * curr['atr'])
+                tp = entry + (cfg['tp'] * curr['atr'])
+                holding_days = cfg['holding'] / 4.0
                 
                 msg = (
-                    f"🚀 <b>[TÍN HIỆU MUA TOP 10 - #{symbol}]</b>\n\n"
+                    f"🚀 <b>[TÍN HIỆU MUA DANH MỤC 25 - #{symbol}]</b>\n\n"
                     f"📌 <b>Mã CP:</b> #{symbol}\n"
                     f"💵 <b>Giá Mua (Entry):</b> {entry:,.0f} VND\n"
-                    f"🎯 <b>Chốt lời (TP 4.5x ATR):</b> {tp:,.0f} VND (+{((tp/entry)-1)*100:.1f}%)\n"
-                    f"🛡 <b>Cắt lỗ ban đầu (SL 2.0x ATR):</b> {sl:,.0f} VND (-{((1-(sl/entry)))*100:.1f}%)\n"
-                    f"💡 <b>Lưu ý Trailing Stop:</b> Khi lãi >= 2x ATR, dời SL lên (Giá - 1.5x ATR)\n"
-                    f"📈 <b>Tỷ trọng Vốn:</b> Tăng +50% quy mô nếu lệnh trước của mã này thắng\n"
+                    f"🎯 <b>Chốt lời (TP {cfg['tp']}x ATR):</b> {tp:,.0f} VND (+{((tp/entry)-1)*100:.1f}%)\n"
+                    f"🛡 <b>Cắt lỗ (SL {cfg['sl']}x ATR):</b> {sl:,.0f} VND (-{((1-(sl/entry)))*100:.1f}%)\n"
+                    f"⏱ <b>Thời gian giữ dự kiến:</b> {cfg['holding']} nến H1 (~{holding_days:.1f} ngày)\n"
+                    f"📈 <b>Quy tắc vốn:</b> +50% quy mô nếu lệnh trước thắng (Max 15%)\n"
                     f"🕒 <b>Thời gian:</b> {curr['time']}"
                 )
                 
@@ -125,7 +153,7 @@ def scan_signals():
             continue
 
 # ==============================================================================
-# 5. CHƯƠNG TRÌNH CHÍNH (CHẠY 1 LẦN CHO GITHUB ACTIONS)
+# 5. CHƯƠNG TRÌNH CHÍNH
 # ==============================================================================
 if __name__ == "__main__":
     if is_market_hours():
@@ -133,3 +161,4 @@ if __name__ == "__main__":
         scan_signals()
     else:
         print("💤 Ngoài khung giờ giao dịch. Bỏ qua lượt quét.")
+ 
