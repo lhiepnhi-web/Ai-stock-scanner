@@ -1,210 +1,144 @@
+import os
+import requests
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+import pytz
 from vnstock import Quote
 import warnings
 warnings.filterwarnings('ignore')
 
-# ==============================================================================
-# 1. CẤU HÌNH VỐN & THAM SỐ HOÀN TẤT MỐC 4% NAV
-# ==============================================================================
-INIT_CAPITAL = 1_000_000_000  # Vốn 1 Tỷ VND
-ALLOC_PER_TRADE = 0.20        # Phân bổ 20% NAV/lệnh
-FEE_BUY = 0.0015              # Phí mua 0.15%
-FEE_SELL = 0.0025             # Phí + thuế bán 0.25%
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 BOT2_CONFIG = {
-    'name': 'Bot 2 Smart Adaptive - Production Final (3.99% NAV)',
+    'name': 'Bot 2 - GitHub Actions Live Bot',
     'symbols': {
-        'VGI': {'sl': 1.8, 'tp': 4.5, 'holding': 22, 'pullback': 0.08},
-        'STB': {'sl': 1.8, 'tp': 4.5, 'holding': 22, 'pullback': 0.06},
-        'FRT': {'sl': 1.8, 'tp': 4.5, 'holding': 22, 'pullback': 0.06},
-        'ELC': {'sl': 1.8, 'tp': 4.5, 'holding': 22, 'pullback': 0.06},
-        'TCB': {'sl': 1.8, 'tp': 4.3, 'holding': 20, 'pullback': 0.05},
-        'PVT': {'sl': 1.8, 'tp': 4.5, 'holding': 22, 'pullback': 0.06},
-        'GEX': {'sl': 1.8, 'tp': 4.5, 'holding': 22, 'pullback': 0.06},
-        'BID': {'sl': 1.8, 'tp': 4.3, 'holding': 20, 'pullback': 0.05},
-        'MWG': {'sl': 1.8, 'tp': 4.3, 'holding': 20, 'pullback': 0.05},
-        'PET': {'sl': 1.8, 'tp': 4.5, 'holding': 22, 'pullback': 0.08},
-        'VIX': {'sl': 1.8, 'tp': 4.5, 'holding': 22, 'pullback': 0.08},
-        'HCM': {'sl': 1.8, 'tp': 4.3, 'holding': 20, 'pullback': 0.05},
-        'MBB': {'sl': 1.8, 'tp': 4.3, 'holding': 20, 'pullback': 0.05},
-        'BAB': {'sl': 1.8, 'tp': 4.3, 'holding': 20, 'pullback': 0.05},
-        'BMI': {'sl': 1.8, 'tp': 4.3, 'holding': 20, 'pullback': 0.05},
+        'VGI': {'sl': 3.0, 'tp': 6.0, 'holding': 25, 'pullback': 0.08, 'ma100': True},
+        'STB': {'sl': 3.0, 'tp': 6.0, 'holding': 25, 'pullback': 0.08, 'ma100': True},
+        'FRT': {'sl': 3.0, 'tp': 6.0, 'holding': 25, 'pullback': 0.08, 'ma100': True},
+        'ELC': {'sl': 3.0, 'tp': 6.0, 'holding': 25, 'pullback': 0.08, 'ma100': False},
+        'HDB': {'sl': 3.0, 'tp': 6.0, 'holding': 25, 'pullback': 0.06, 'ma100': True},
+        'TCB': {'sl': 3.0, 'tp': 6.0, 'holding': 25, 'pullback': 0.06, 'ma100': False},
+        'PVT': {'sl': 3.0, 'tp': 6.0, 'holding': 25, 'pullback': 0.08, 'ma100': False},
+        'GEX': {'sl': 3.0, 'tp': 6.0, 'holding': 25, 'pullback': 0.08, 'ma100': False},
+        'BID': {'sl': 3.0, 'tp': 6.0, 'holding': 25, 'pullback': 0.06, 'ma100': False},
+        'MWG': {'sl': 3.0, 'tp': 6.0, 'holding': 25, 'pullback': 0.06, 'ma100': False},
+        'PET': {'sl': 3.0, 'tp': 6.0, 'holding': 25, 'pullback': 0.08, 'ma100': True},
+        'VIX': {'sl': 3.0, 'tp': 6.0, 'holding': 25, 'pullback': 0.08, 'ma100': True},
+        'HCM': {'sl': 3.0, 'tp': 6.0, 'holding': 25, 'pullback': 0.05, 'ma100': True},
+        'MBB': {'sl': 3.0, 'tp': 6.0, 'holding': 25, 'pullback': 0.06, 'ma100': False},
+        'BAB': {'sl': 3.0, 'tp': 6.0, 'holding': 25, 'pullback': 0.06, 'ma100': False},
+        'BMI': {'sl': 3.0, 'tp': 6.0, 'holding': 25, 'pullback': 0.06, 'ma100': False},
     }
 }
 
-# ==============================================================================
-# 2. HÀM TÍNH CHỈ BÁO KỸ THUẬT
-# ==============================================================================
-def calculate_alma(series, window=9, sigma=6, offset=0.85):
-    m = offset * (window - 1)
+def send_telegram(message):
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        print("❌ Thiếu thông tin Telegram Token hoặc Chat ID trong Secrets.")
+        return False
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "HTML"}
+    try:
+        res = requests.post(url, json=payload, timeout=10)
+        return res.status_code == 200
+    except Exception as e:
+        print(f"❌ Lỗi gửi Telegram: {e}")
+        return False
+
+def is_market_hours():
+    tz_vn = pytz.timezone('Asia/Ho_Chi_Minh')
+    now = datetime.now(tz_vn)
+    if now.weekday() >= 5: return False # Thứ 7, Chủ Nhật nghỉ
+    ct = now.time()
+    return (datetime.strptime("09:00", "%H:%M").time() <= ct <= datetime.strptime("11:30", "%H:%M").time()) or \
+           (datetime.strptime("13:00", "%H:%M").time() <= ct <= datetime.strptime("14:30", "%H:%M").time())
+
+def calculate_rsi(series, period=14):
+    delta = series.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
+
+def calculate_alma(series, window=9, offset=0.85, sigma=6.0):
+    m = int(offset * (window - 1))
     s = window / sigma
-    d_w = np.exp(-((np.arange(window) - m) ** 2) / (2 * s * s))
-    weights = d_w / d_w.sum()
+    weights = np.exp(-((np.arange(window) - m) ** 2) / (2 * s ** 2))
+    weights /= weights.sum()
     return series.rolling(window).apply(lambda x: np.dot(x, weights), raw=True)
 
 def calculate_indicators(df):
     df = df.copy()
+    df['tenkan_1'] = (df['high'].rolling(9).max() + df['low'].rolling(9).min()) / 2
+    df['kijun_1'] = (df['high'].rolling(17).max() + df['low'].rolling(17).min()) / 2
+    df['senkou_b_2'] = (df['high'].rolling(52).max() + df['low'].rolling(52).min()) / 2
     
-    # Ichimoku Chuẩn (9, 26, 52)
-    df['tenkan'] = (df['high'].rolling(9).max() + df['low'].rolling(9).min()) / 2
-    df['kijun'] = (df['high'].rolling(26).max() + df['low'].rolling(26).min()) / 2
+    df['ma20'] = df['close'].rolling(20).mean()
+    df['ma100'] = df['close'].rolling(100).mean()
+    df['alma'] = calculate_alma(df['close'], window=9, offset=0.85, sigma=6.0)
     
-    # Ichimoku Macro (65, 129, 52)
-    df['tenkan_m'] = (df['high'].rolling(65).max() + df['low'].rolling(65).min()) / 2
-    df['kijun_m'] = (df['high'].rolling(129).max() + df['low'].rolling(129).min()) / 2
-    df['senkou_a_m'] = ((df['tenkan_m'] + df['kijun_m']) / 2).shift(26)
-    df['senkou_b_m'] = ((df['high'].rolling(52).max() + df['low'].rolling(52).min()) / 2).shift(26)
+    df['rsi'] = calculate_rsi(df['close'], 14)
+    df['vol_ma'] = df['volume'].rolling(20).mean()
     
-    # ALMA Price & Volume
-    df['alma_price'] = calculate_alma(df['close'], window=9)
-    df['alma_vol'] = calculate_alma(df['volume'], window=9)
-    
-    # RSI (14)
-    delta = df['close'].diff()
-    gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
-    loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
-    df['rsi'] = 100 - (100 / (1 + (gain / (loss + 1e-10))))
-    
-    # ATR (14)
     df['tr0'] = df['high'] - df['low']
     df['tr1'] = (df['high'] - df['close'].shift(1)).abs()
     df['tr2'] = (df['low'] - df['close'].shift(1)).abs()
     df['tr'] = df[['tr0', 'tr1', 'tr2']].max(axis=1)
     df['atr'] = df['tr'].rolling(14).mean()
-    
     return df
 
-# ==============================================================================
-# 3. ĐỘNG CƠ PIPELINE THỰC THI & KIỂM THỬ
-# ==============================================================================
-def run_production_pipeline():
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=180)
-    start_str = start_date.strftime('%Y-%m-%d')
-    end_str = end_date.strftime('%Y-%m-%d')
+def scan_signals():
+    tz_vn = pytz.timezone('Asia/Ho_Chi_Minh')
+    print(f"🔍 [{datetime.now(tz_vn).strftime('%H:%M:%S %d/%m/%Y')}] Bắt đầu quét tín hiệu...")
     
-    print("="*95)
-    print(f"🚀 KHỞI CHẠY PIPELINE {BOT2_CONFIG['name'].upper()} (TỪ {start_str} ĐẾN {end_str})")
-    print("="*95)
-    
-    all_trades = []
+    # Lấy dữ liệu 90 ngày gần nhất để đảm bảo đủ số lượng nến tính chỉ báo
+    start_date = (datetime.now(tz_vn) - timedelta(days=90)).strftime('%Y-%m-%d')
     
     for symbol, cfg in BOT2_CONFIG['symbols'].items():
         try:
             quote = Quote(symbol=symbol, source="KBS")
-            df = quote.history(start=start_str, end=end_str, interval="1H")
-            if df is None or len(df) < 160: continue
+            df = quote.history(start=start_date, interval="1H")
+            if df is None or len(df) < 140: continue
             
             df = calculate_indicators(df)
-            in_position = False
-            entry_price, sl_price, tp_price = 0, 0, 0
-            highest_price = 0
-            holding_count = 0
-            entry_time = None
-            atr_at_entry = 0
+            prev = df.iloc[-2]
+            curr = df.iloc[-1]
             
-            for i in range(150, len(df) - 1):
-                curr = df.iloc[i]
-                prev = df.iloc[i - 1]
-                next_bar = df.iloc[i + 1]
+            cross_up = (prev['tenkan_1'] <= prev['kijun_1']) and (curr['tenkan_1'] > curr['kijun_1'])
+            dist_kijun = abs(curr['close'] - curr['kijun_1']) / curr['kijun_1']
+            pb_ok = dist_kijun <= cfg['pullback']
+            
+            trend_ok = (curr['close'] > curr['ma20']) and (curr['close'] > curr['alma'])
+            rsi_ok = (curr['rsi'] > 40) and (curr['rsi'] < 80)
+            vol_ok = curr['volume'] > curr['vol_ma']
+            cloud_ok = curr['close'] > curr['senkou_b_2']
+            ma100_ok = (curr['close'] > curr['ma100']) if cfg['ma100'] else True
+            
+            if cross_up and pb_ok and trend_ok and rsi_ok and vol_ok and cloud_ok and ma100_ok and pd.notnull(curr['atr']) and curr['atr'] > 0:
+                entry = curr['close']
+                sl = entry - (cfg['sl'] * curr['atr'])
+                tp = entry + (cfg['tp'] * curr['atr'])
                 
-                if in_position:
-                    holding_count += 1
-                    highest_price = max(highest_price, curr['high'])
-                    
-                    # Trailing Stop chuẩn Smart Adaptive
-                    trailing_stop = highest_price - (1.2 * atr_at_entry)
-                    hit_trailing = (highest_price >= entry_price + (1.5 * atr_at_entry)) and (curr['close'] <= trailing_stop)
-                    
-                    hit_tp = curr['high'] >= tp_price
-                    hit_sl = curr['low'] <= sl_price
-                    time_out = holding_count >= cfg['holding']
-                    
-                    if hit_tp:
-                        exit_price = tp_price
-                        reason = "Chốt Lời (TP)"
-                        hit_exit = True
-                    elif hit_trailing:
-                        exit_price = trailing_stop
-                        reason = "Trailing Stop"
-                        hit_exit = True
-                    elif hit_sl:
-                        exit_price = sl_price
-                        reason = "Cắt Lỗ (SL)"
-                        hit_exit = True
-                    elif time_out:
-                        exit_price = curr['close']
-                        reason = "Hết T+"
-                        hit_exit = True
-                    else:
-                        hit_exit = False
-                    
-                    if hit_exit:
-                        raw_pnl = (exit_price - entry_price) / entry_price
-                        net_pnl = raw_pnl - FEE_BUY - FEE_SELL
-                        trade_value = INIT_CAPITAL * ALLOC_PER_TRADE
-                        pnl_vnd = trade_value * net_pnl
-                        
-                        all_trades.append({
-                            'Mã': symbol,
-                            'Vào lệnh': entry_time,
-                            'Giá Mua': round(entry_price, 2),
-                            'Giá Bán': round(exit_price, 2),
-                            'Lãi/Lỗ ròng (%)': round(net_pnl * 100, 2),
-                            'Lãi/Lỗ (VND)': round(pnl_vnd, 0),
-                            'Lý do': reason,
-                            'pnl_raw': pnl_vnd
-                        })
-                        in_position = False
-                else:
-                    cross_up = (prev['tenkan'] <= prev['kijun']) and (curr['tenkan'] > curr['kijun'])
-                    dist_kijun = abs(curr['close'] - curr['kijun']) / curr['kijun']
-                    pb_ok = dist_kijun <= cfg['pullback']
-                    
-                    macro_cloud_top = max(curr['senkou_a_m'], curr['senkou_b_m'])
-                    macro_ok = curr['close'] > macro_cloud_top
-                    
-                    rsi_ok = (curr['rsi'] >= 40) and (curr['rsi'] <= 70)
-                    vol_ok = curr['volume'] > curr['alma_vol']
-                    
-                    if cross_up and pb_ok and macro_ok and rsi_ok and vol_ok and pd.notnull(curr['atr']) and curr['atr'] > 0:
-                        in_position = True
-                        entry_price = next_bar['open']
-                        atr_at_entry = curr['atr']
-                        highest_price = entry_price
-                        
-                        sl_price = entry_price - (cfg['sl'] * atr_at_entry)
-                        tp_price = entry_price + (cfg['tp'] * atr_at_entry)
-                        holding_count = 0
-                        entry_time = next_bar['time']
-                        
+                msg = (
+                    f"🚀 <b>[{BOT2_CONFIG['name']} - #{symbol}]</b>\n\n"
+                    f"📌 <b>Mã CP:</b> #{symbol}\n"
+                    f"💵 <b>Giá Mua (Entry):</b> {entry:,.0f} VND\n"
+                    f"🎯 <b>Chốt lời (TP {cfg['tp']}x ATR):</b> {tp:,.0f} VND (+{((tp/entry)-1)*100:.1f}%)\n"
+                    f"🛡 <b>Cắt lỗ (SL {cfg['sl']}x ATR):</b> {sl:,.0f} VND (-{((1-(sl/entry)))*100:.1f}%)\n"
+                    f"⏱ <b>Thời gian giữ:</b> {cfg['holding']} nến H1 (~{cfg['holding']/4:.1f} ngày)\n"
+                    f"📉 <b>Pullback Kijun:</b> {dist_kijun*100:.2f}% (Max {cfg['pullback']*100:.0f}%)\n"
+                    f"🕒 <b>Thời gian:</b> {curr['time']}"
+                )
+                print(f"✅ GỬI THÀNH CÔNG TÍN HIỆU: {symbol} giá {entry:,.0f}")
+                send_telegram(msg)
         except Exception as e:
-            print(f"❌ Lỗi xử lý mã {symbol}: {e}")
-
-    df_trades = pd.DataFrame(all_trades)
-    if df_trades.empty:
-        print("⚠️ Không phát sinh giao dịch nào thỏa mãn điều kiện chiến lược.")
-        return
-
-    total_pnl = df_trades['pnl_raw'].sum()
-    win_trades = df_trades[df_trades['pnl_raw'] > 0]
-    win_rate = (len(win_trades) / len(df_trades)) * 100
-    
-    cols_display = ['Mã', 'Vào lệnh', 'Giá Mua', 'Giá Bán', 'Lãi/Lỗ ròng (%)', 'Lãi/Lỗ (VND)', 'Lý do']
-    print(df_trades[cols_display].to_string(index=False))
-    
-    print("\n" + "="*95)
-    print("📊 BẢNG TỔNG KẾT HIỆU SUẤT THỰC CHIẾN (PRODUCTION READY)")
-    print("="*95)
-    print(f"🔹 Tổng số lệnh phát sinh : {len(df_trades)} lệnh")
-    print(f"🔹 Số lệnh Thắng / Thua   : {len(win_trades)} thắng / {len(df_trades)-len(win_trades)} thua")
-    print(f"🔹 Tỷ lệ thắng (Win Rate) : {win_rate:.1f}%")
-    print(f"💵 Tổng Lợi Nhuận Ròng    : {total_pnl:+,.0f} VND")
-    print(f"📈 Tăng trưởng danh mục   : {(total_pnl / INIT_CAPITAL) * 100:+.2f}% NAV")
-    print("="*95)
+            print(f"⚠️ Lỗi xử lý mã {symbol}: {e}")
+            continue
 
 if __name__ == "__main__":
-    run_production_pipeline()
+    if is_market_hours():
+        scan_signals()
+    else:
+        print("💤 Ngoài khung giờ giao dịch chứng khoán Việt Nam.")
  
