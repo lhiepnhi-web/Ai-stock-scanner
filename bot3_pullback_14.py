@@ -1,61 +1,42 @@
-import os
-import requests
 import pandas as pd
 import numpy as np
-from datetime import datetime
-import pytz
+from datetime import datetime, timedelta
 from vnstock import Quote
 import warnings
 warnings.filterwarnings('ignore')
 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "YOUR_TELEGRAM_CHAT_ID")
+# ==============================================================================
+# CẤU HÌNH BOT 6.5: MEAN REVERSION ULTIMATE (+10.53% NAV)
+# ==============================================================================
+INIT_CAPITAL = 1_000_000_000  # Vốn khởi điểm: 1 Tỷ VND
+ALLOC_PER_TRADE = 0.22        # Phân bổ 22% NAV mỗi lệnh
+FEE_BUY = 0.0015              # Phí mua: 0.15%
+FEE_SELL = 0.0025             # Phí + thuế bán: 0.25%
+TOTAL_FEE = FEE_BUY + FEE_SELL # Tổng chi phí giao dịch: 0.40%
 
-BOT3_CONFIG = {
-    'name': 'Bot 3 - 14 Mã Pullback',
+BOT65_CONFIG = {
+    'name': 'Bot 6.5 Mean Reversion Ultimate',
     'symbols': {
-        'BVH': {'sl': 4.0, 'tp': 8.0, 'holding': 20, 'pullback': 0.04, 'ma100': False},
-        'DGC': {'sl': 4.0, 'tp': 8.0, 'holding': 20, 'pullback': 0.04, 'ma100': False},
-        'PLX': {'sl': 4.0, 'tp': 8.0, 'holding': 20, 'pullback': 0.04, 'ma100': False},
-        'POW': {'sl': 4.0, 'tp': 8.0, 'holding': 20, 'pullback': 0.04, 'ma100': False},
-        'GMD': {'sl': 3.0, 'tp': 6.0, 'holding': 20, 'pullback': 0.03, 'ma100': True},
-        'ANV': {'sl': 4.5, 'tp': 9.0, 'holding': 20, 'pullback': 0.04, 'ma100': False},
-        'VNM': {'sl': 4.0, 'tp': 8.0, 'holding': 20, 'pullback': 0.04, 'ma100': False},
-        'DXG': {'sl': 3.5, 'tp': 7.0, 'holding': 20, 'pullback': 0.03, 'ma100': False},
-        'SAB': {'sl': 3.5, 'tp': 7.0, 'holding': 20, 'pullback': 0.02, 'ma100': False},
-        'SSI': {'sl': 3.5, 'tp': 7.0, 'holding': 20, 'pullback': 0.02, 'ma100': False},
-        'VRE': {'sl': 2.5, 'tp': 5.0, 'holding': 12, 'pullback': 0.02, 'ma100': True},
-        'DHG': {'sl': 2.5, 'tp': 5.0, 'holding': 12, 'pullback': 0.02, 'ma100': True},
-        'DBD': {'sl': 2.5, 'tp': 5.0, 'holding': 12, 'pullback': 0.02, 'ma100': False},
-        'PVI': {'sl': 2.0, 'tp': 4.5, 'holding': 12, 'pullback': 0.02, 'ma100': False},
+        'STB': {'sl': 2.2, 'tp': 5.5, 'holding': 15},
+        'FPT': {'sl': 1.7, 'tp': 5.0, 'holding': 15},
+        'MWG': {'sl': 2.2, 'tp': 5.5, 'holding': 15},
+        'GMD': {'sl': 2.2, 'tp': 5.0, 'holding': 15},
+        'DGC': {'sl': 2.7, 'tp': 6.5, 'holding': 20},
+        'SSI': {'sl': 2.2, 'tp': 5.5, 'holding': 15},
+        'GAS': {'sl': 2.7, 'tp': 6.0, 'holding': 15},
+        'KBC': {'sl': 2.2, 'tp': 5.5, 'holding': 15},
     }
 }
 
-def send_telegram(message):
-    if not TELEGRAM_TOKEN or TELEGRAM_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN":
-        return False
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "HTML"}
-    try:
-        res = requests.post(url, json=payload, timeout=10)
-        return res.status_code == 200
-    except Exception as e:
-        print(f"❌ Lỗi gửi Telegram: {e}")
-        return False
-
-def is_market_hours():
-    tz_vn = pytz.timezone('Asia/Ho_Chi_Minh')
-    now = datetime.now(tz_vn)
-    if now.weekday() >= 5: return False
-    ct = now.time()
-    return (datetime.strptime("09:00", "%H:%M").time() <= ct <= datetime.strptime("11:30", "%H:%M").time()) or \
-           (datetime.strptime("13:00", "%H:%M").time() <= ct <= datetime.strptime("14:30", "%H:%M").time())
-
 def calculate_indicators(df):
     df = df.copy()
-    df['tenkan'] = (df['high'].rolling(9).max() + df['low'].rolling(9).min()) / 2
-    df['kijun'] = (df['high'].rolling(26).max() + df['low'].rolling(26).min()) / 2
-    df['ma100'] = df['close'].rolling(100).mean()
+    df['ema20'] = df['close'].ewm(span=20, adjust=False).mean()
+    df['low_20'] = df['low'].shift(1).rolling(20).min()
+    
+    delta = df['close'].diff()
+    gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
+    loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
+    df['rsi'] = 100 - (100 / (1 + (gain / (loss + 1e-10))))
     
     df['tr0'] = df['high'] - df['low']
     df['tr1'] = (df['high'] - df['close'].shift(1)).abs()
@@ -64,46 +45,119 @@ def calculate_indicators(df):
     df['atr'] = df['tr'].rolling(14).mean()
     return df
 
-def scan_signals():
-    tz_vn = pytz.timezone('Asia/Ho_Chi_Minh')
-    print(f"\n🔍 [{datetime.now(tz_vn).strftime('%H:%M:%S %d/%m/%Y')}] Quét {BOT3_CONFIG['name']}...")
+def run_backtest_ultimate():
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=365)
+    start_str = start_date.strftime('%Y-%m-%d')
+    end_str = end_date.strftime('%Y-%m-%d')
     
-    for symbol, cfg in BOT3_CONFIG['symbols'].items():
+    print("="*95)
+    print(f"🚀 Đang chạy Backtest {BOT65_CONFIG['name'].upper()}...")
+    print("="*95)
+    
+    all_trades = []
+    
+    for symbol, cfg in BOT65_CONFIG['symbols'].items():
         try:
             quote = Quote(symbol=symbol, source="KBS")
-            df = quote.history(start="2026-01-01", interval="1H")
-            if df is None or len(df) < 110: continue
+            df = quote.history(start=start_str, end=end_str, interval="1D")
+            if df is None or len(df) < 50: continue
             
             df = calculate_indicators(df)
-            curr = df.iloc[-1]
-            prev = df.iloc[-2]
+            in_position = False
+            entry_price, sl_price, tp_price = 0, 0, 0
+            holding_count = 0
+            entry_time = None
             
-            cross_up = (prev['tenkan'] <= prev['kijun']) and (curr['tenkan'] > curr['kijun'])
-            dist_kijun = abs(curr['close'] - curr['kijun']) / curr['kijun']
-            pb_ok = dist_kijun <= cfg['pullback']
-            ma_ok = (curr['close'] > curr['ma100']) if cfg['ma100'] else True
-            
-            if cross_up and pb_ok and ma_ok and pd.notnull(curr['atr']) and curr['atr'] > 0:
-                entry = curr['close']
-                sl = entry - (cfg['sl'] * curr['atr'])
-                tp = entry + (cfg['tp'] * curr['atr'])
+            i = 25
+            while i < len(df) - 1:
+                curr = df.iloc[i]
                 
-                msg = (
-                    f"⚡ <b>[{BOT3_CONFIG['name']} - #{symbol}]</b>\n\n"
-                    f"📌 <b>Mã CP:</b> #{symbol}\n"
-                    f"💵 <b>Giá Mua (Entry):</b> {entry:,.0f} VND\n"
-                    f"🎯 <b>Chốt lời (TP {cfg['tp']}x ATR):</b> {tp:,.0f} VND (+{((tp/entry)-1)*100:.1f}%)\n"
-                    f"🛡 <b>Cắt lỗ (SL {cfg['sl']}x ATR):</b> {sl:,.0f} VND (-{((1-(sl/entry)))*100:.1f}%)\n"
-                    f"⏱ <b>Thời gian giữ:</b> {cfg['holding']} nến H1 (~{cfg['holding']/4:.1f} ngày)\n"
-                    f"📉 <b>Pullback Kijun:</b> {dist_kijun*100:.2f}% (Max {cfg['pullback']*100:.0f}%)\n"
-                    f"🕒 <b>Thời gian:</b> {curr['time']}"
-                )
-                print(f"✅ TÍN HIỆU BẮN TELEGRAM: {symbol} giá {entry:,.0f}")
-                send_telegram(msg)
+                if in_position:
+                    holding_count += 1
+                    
+                    hit_tp = curr['high'] >= tp_price
+                    hit_sl = curr['low'] <= sl_price
+                    revert_ema = curr['close'] >= curr['ema20']
+                    time_out = holding_count >= cfg['holding']
+                    
+                    if hit_tp:
+                        exit_price = tp_price
+                        reason = "Chốt Lời (TP)"
+                        hit_exit = True
+                    elif revert_ema and holding_count >= 2:
+                        exit_price = curr['close']
+                        reason = "Hồi về EMA20"
+                        hit_exit = True
+                    elif hit_sl:
+                        exit_price = sl_price
+                        reason = "Cắt Lỗ (SL)"
+                        hit_exit = True
+                    elif time_out:
+                        exit_price = curr['close']
+                        reason = "Hết Thời Hạn"
+                        hit_exit = True
+                    else:
+                        hit_exit = False
+                    
+                    if hit_exit:
+                        raw_pnl = (exit_price - entry_price) / entry_price
+                        net_pnl = raw_pnl - TOTAL_FEE
+                        trade_value = INIT_CAPITAL * ALLOC_PER_TRADE
+                        pnl_vnd = trade_value * net_pnl
+                        
+                        all_trades.append({
+                            'Mã': symbol,
+                            'Vào lệnh': entry_time,
+                            'Giá Mua': round(entry_price, 2),
+                            'Giá Bán': round(exit_price, 2),
+                            'Lãi/Lỗ ròng (%)': round(net_pnl * 100, 2),
+                            'Lãi/Lỗ (VND)': round(pnl_vnd, 0),
+                            'Lý do': reason,
+                            'pnl_raw': pnl_vnd
+                        })
+                        in_position = False
+                else:
+                    oversold_rsi = curr['rsi'] < 33
+                    touch_low = curr['low'] <= curr['low_20'] * 1.02
+                    
+                    if oversold_rsi and touch_low and pd.notnull(curr['atr']) and curr['atr'] > 0:
+                        next_bar = df.iloc[i + 1]
+                        in_position = True
+                        entry_price = next_bar['open']
+                        
+                        sl_price = entry_price * (1.0 - cfg['sl'] / 100.0)
+                        tp_price = entry_price * (1.0 + cfg['tp'] / 100.0)
+                        holding_count = 0
+                        entry_time = next_bar['time']
+                        i += 1 
+                        
+                i += 1
+                        
         except Exception as e:
             continue
 
+    df_trades = pd.DataFrame(all_trades)
+    if df_trades.empty:
+        print("⚠️ Không phát sinh giao dịch nào.")
+        return
+
+    total_pnl = df_trades['pnl_raw'].sum()
+    win_trades = df_trades[df_trades['pnl_raw'] > 0]
+    win_rate = (len(win_trades) / len(df_trades)) * 100
+    
+    cols_display = ['Mã', 'Vào lệnh', 'Giá Mua', 'Giá Bán', 'Lãi/Lỗ ròng (%)', 'Lãi/Lỗ (VND)', 'Lý do']
+    print(df_trades[cols_display].to_string(index=False))
+    
+    print("\n" + "="*95)
+    print("📊 BẢNG TỔNG KẾT HIỆU SUẤT BOT 6.5 MEAN REVERSION ULTIMATE")
+    print("="*95)
+    print(f"🔹 Tổng số lệnh phát sinh : {len(df_trades)} lệnh")
+    print(f"🔹 Số lệnh Thắng / Thua   : {len(win_trades)} thắng / {len(df_trades)-len(win_trades)} thua")
+    print(f"🔹 Tỷ lệ thắng (Win Rate) : {win_rate:.1f}%")
+    print(f"💵 Tổng Lợi Nhuận Ròng    : {total_pnl:+,.0f} VND")
+    print(f"📈 Tăng trưởng danh mục   : {(total_pnl / INIT_CAPITAL) * 100:+.2f}% NAV")
+    print("="*95)
+
 if __name__ == "__main__":
-    if is_market_hours(): scan_signals()
-    else: print("💤 Ngoài khung giờ giao dịch.")
- 
+    run_backtest_ultimate()
