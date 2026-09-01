@@ -2,10 +2,10 @@ name: Stock Bot Scanner
 
 on:
   schedule:
-    # Giờ VN = Giờ UTC + 7
-    # Sáng: 9:10, 10:10, 11:10 (tương ứng UTC 2:10, 3:10, 4:10)
-    # Chiều: 13:10, 14:10 (tương ứng UTC 6:10, 7:10)
-    - cron: '10 2,3,4,6,7 * * 1-5'
+    # Giờ VN = Giờ UTC + 7 (Chạy thứ 2 đến thứ 6)
+    # Sáng (09:00 - 11:30): Quét lúc 09:15, 09:45, 10:15, 10:45, 11:15 (Tương ứng UTC 2:15, 2:45, 3:15, 3:45, 4:15)
+    # Chiều (13:00 - 14:30): Quét lúc 13:15, 13:45, 14:15 (Tương ứng UTC 6:15, 6:45, 7:15)
+    - cron: '15,45 2,3,4,6,7 * * 1-5'
   workflow_dispatch:
 
 jobs:
@@ -24,10 +24,11 @@ jobs:
         run: |
           pip install pandas numpy requests vnstock tabulate
 
-      - name: Run scanner script
+      - name: Run scanner scripts
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           python bot_scanner.py
+          python bot_custom.py
  
