@@ -1,6 +1,0 @@
-vnstock
-pandas
-numpy
-tabulate
-requests
- 
